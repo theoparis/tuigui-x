@@ -1,0 +1,9 @@
+[package]
+name = "tuigui-x"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fastrand = "2.1.1"
+tuigui = { version = "0.13.0", features = ["backend_crossterm"] }
+xcb = "1.4.0"
