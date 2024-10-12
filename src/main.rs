@@ -79,7 +79,20 @@ fn main() {
 		pane(AnsiColor::Cyan),
 	);
 
-	let root = widgets::Layers::new(vec![root_1, root_2, root_3]);
+	let label = widgets::WidgetPointer::new(widgets::Label::new(
+		"The quick brown fox jumps over the lazy dog.",
+		widgets::LabelStyle::Single(Style::new().fg(Some(AnsiColor::Green))),
+		false,
+	));
+
+	let label_ptr = label.pointer.clone();
+
+	let root = widgets::Layers::new(vec![
+		widgets::WidgetDyn::new(Box::new(root_1)),
+		widgets::WidgetDyn::new(Box::new(root_2)),
+		widgets::WidgetDyn::new(Box::new(root_3)),
+		widgets::WidgetDyn::new(Box::new(label)),
+	]);
 
 	let mut context = Context::new(
 		ContextConfig::default(),
@@ -104,7 +117,12 @@ fn main() {
 	while std::time::Instant::now() - start
 		< std::time::Duration::from_secs_f64(TIME_LIMIT)
 	{
-		context.draw().unwrap();
+		let draw_summary = context.draw().unwrap();
+
+		label_ptr.lock().unwrap().set_label(format!(
+			"Frame took {} seconds to draw.",
+			draw_summary.duration.as_secs_f64(),
+		));
 	}
 
 	context.cleanup().unwrap();

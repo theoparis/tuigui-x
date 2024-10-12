@@ -3,6 +3,14 @@ use tuigui::{Backend, ClearType};
 use tuigui::{Position, Size};
 use xcb::x;
 
+const WIDTH: u16 = 150;
+const HEIGHT: u16 = 150;
+const FONT_WIDTH: u16 = 8;
+const FONT_HEIGHT: u16 = 16;
+const FONT_OFFSET_X: i16 = 2;
+const FONT_OFFSET_Y: i16 = 3;
+const BORDER_WIDTH: u16 = 10;
+
 // This is cursed
 pub struct XBackend {
 	connection: xcb::Connection,
@@ -24,13 +32,13 @@ impl XBackend {
 			parent: screen.root(),
 			x: 0,
 			y: 0,
-			width: 150,
-			height: 150,
-			border_width: 10,
+			width: WIDTH,
+			height: HEIGHT,
+			border_width: BORDER_WIDTH,
 			class: x::WindowClass::InputOutput,
 			visual: screen.root_visual(),
 			value_list: &[
-				x::Cw::BackPixel(screen.white_pixel()),
+				x::Cw::BackPixel(screen.black_pixel()),
 				x::Cw::EventMask(
 					x::EventMask::EXPOSURE | x::EventMask::KEY_PRESS,
 				),
@@ -84,7 +92,7 @@ impl Backend for XBackend {
 
 		let reply = self.connection.wait_for_reply(cookie).unwrap();
 
-		Ok(Size::new(reply.width() / 8, reply.height() / 16))
+		Ok(Size::new(reply.width() / FONT_WIDTH, reply.height() / FONT_HEIGHT))
 	}
 
 	fn set_cursor_pos(&mut self, position: Position) -> Result<(), io::Error> {
@@ -93,18 +101,18 @@ impl Backend for XBackend {
 		Ok(())
 	}
 
-	fn alt_screen(&mut self, enable: bool) -> Result<(), io::Error> {
+	fn alt_screen(&mut self, _enable: bool) -> Result<(), io::Error> {
 		Ok(())
 	}
 
-	fn raw_mode(&mut self, enable: bool) -> Result<(), io::Error> {
+	fn raw_mode(&mut self, _enable: bool) -> Result<(), io::Error> {
 		Ok(())
 	}
 
 	fn clear(&mut self, clear_type: ClearType) -> Result<(), io::Error> {
 		let size = self.terminal_size()?;
-		let width = size.cols * 8;
-		let height = size.rows * 16;
+		let width = size.cols * FONT_WIDTH;
+		let height = size.rows * FONT_HEIGHT;
 
 		match clear_type {
 			ClearType::All => {
@@ -118,8 +126,8 @@ impl Backend for XBackend {
 				});
 			}
 			ClearType::FromCursorDown => {
-				let x = self.cursor_position.col * 8;
-				let y = self.cursor_position.row * 16;
+				let x = self.cursor_position.col * FONT_WIDTH as i16;
+				let y = self.cursor_position.row * FONT_HEIGHT as i16;
 
 				self.connection.send_request(&x::ClearArea {
 					exposures: false,
@@ -137,7 +145,7 @@ impl Backend for XBackend {
 					x: 0,
 					y: 0,
 					width,
-					height: self.cursor_position.row as u16 * 16,
+					height: self.cursor_position.row as u16 * FONT_HEIGHT,
 				});
 			}
 			ClearType::Purge => {
@@ -155,19 +163,19 @@ impl Backend for XBackend {
 					exposures: false,
 					window: self.window,
 					x: 0,
-					y: self.cursor_position.row * 16,
+					y: self.cursor_position.row * FONT_HEIGHT as i16,
 					width,
-					height: 16,
+					height: FONT_HEIGHT,
 				});
 			}
 			ClearType::UntilNewLine => {
 				self.connection.send_request(&x::ClearArea {
 					exposures: false,
 					window: self.window,
-					x: self.cursor_position.col * 8,
-					y: self.cursor_position.row * 16,
-					width: width - self.cursor_position.col as u16 * 8,
-					height: 16,
+					x: self.cursor_position.col * FONT_WIDTH as i16,
+					y: self.cursor_position.row * FONT_HEIGHT as i16,
+					width: width - self.cursor_position.col as u16 * FONT_WIDTH,
+					height: FONT_HEIGHT,
 				});
 			}
 		}
@@ -175,7 +183,7 @@ impl Backend for XBackend {
 		Ok(())
 	}
 
-	fn show_cursor(&mut self, enable: bool) -> Result<(), io::Error> {
+	fn show_cursor(&mut self, _enable: bool) -> Result<(), io::Error> {
 		Ok(())
 	}
 
@@ -185,8 +193,6 @@ impl Backend for XBackend {
 		let content = content.as_ref();
 		let (color, content) = decode_ansi(content);
 
-		dbg!(&content);
-
 		for c in content.chars() {
 			if c == '\n' {
 				self.cursor_position.row += 1;
@@ -195,15 +201,10 @@ impl Backend for XBackend {
 				continue;
 			}
 
-			let x = self.cursor_position.col * 8;
-			let y = self.cursor_position.row * 16;
+			let x = self.cursor_position.col * FONT_WIDTH as i16;
+			let y = self.cursor_position.row * FONT_HEIGHT as i16;
 
 			let gc: x::Gcontext = self.connection.generate_id();
-
-			if c == ' ' {
-				self.cursor_position.col += 1;
-				continue;
-			}
 
 			if c == '█' {
 				self.connection.send_request(&x::CreateGc {
@@ -218,19 +219,8 @@ impl Backend for XBackend {
 					rectangles: &[x::Rectangle {
 						x,
 						y,
-						width: 8,
-						height: 16,
-					}],
-				});
-			} else if c == ' ' {
-				self.connection.send_request(&x::PolyFillRectangle {
-					drawable,
-					gc,
-					rectangles: &[x::Rectangle {
-						x,
-						y,
-						width: 8,
-						height: 16,
+						width: FONT_WIDTH,
+						height: FONT_HEIGHT,
 					}],
 				});
 			} else {
@@ -240,23 +230,21 @@ impl Backend for XBackend {
 					value_list: &[x::Gc::Foreground(color)],
 				});
 
-				self.connection.send_request(&x::PolyFillRectangle {
-					drawable,
-					gc,
-					rectangles: &[x::Rectangle {
-						x,
-						y,
-						width: 8,
-						height: 16,
-					}],
+				self.connection.send_request(&x::ClearArea {
+					window: self.window,
+					exposures: false,
+					x,
+					y,
+					width: FONT_WIDTH,
+					height: FONT_HEIGHT,
 				});
 
 				self.connection.send_request(&x::ImageText8 {
 					drawable,
 					gc,
-					x,
-					y: y + 16,
-					string: &[c as u8],
+					x: x + FONT_OFFSET_X,
+					y: y + (FONT_HEIGHT as i16) - FONT_OFFSET_Y,
+					string: &[c as u8, ' ' as u8],
 				});
 			}
 
