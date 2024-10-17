@@ -1,7 +1,5 @@
-use backend::XBackend;
 use tuigui::*;
-
-mod backend;
+use tuigui_x::{XBackend, XContentProcessor};
 
 // Amount of time before the demo quits.
 const TIME_LIMIT: f64 = 6.0;
@@ -101,7 +99,7 @@ fn main() {
 			..Default::default()
 		},
 		XBackend::new().unwrap(),
-		content_processors::OwoColorsContentProcessor::new(),
+		XContentProcessor {},
 		root,
 	);
 
@@ -117,7 +115,7 @@ fn main() {
 	while std::time::Instant::now() - start
 		< std::time::Duration::from_secs_f64(TIME_LIMIT)
 	{
-		let draw_summary = context.draw().unwrap();
+		let draw_summary = context.draw().unwrap().unwrap();
 
 		label_ptr.lock().unwrap().set_label(format!(
 			"Frame took {} seconds to draw.",
