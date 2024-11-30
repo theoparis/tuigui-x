@@ -1,10 +1,63 @@
 use std::io;
-use tuigui::{Backend, ClearType};
+use tuigui::{
+	AnsiColor, Backend, ClearType, ContentProcessorOutput as _, StyleGround,
+};
 use tuigui::{Position, Size};
 use xcb::x;
 
-const WIDTH: u16 = 150;
-const HEIGHT: u16 = 150;
+pub struct Printable {
+	pub value: char,
+	pub color: u32,
+}
+
+impl tuigui::ContentProcessorOutput for Printable {
+	fn clear_output() -> Self {
+		Self {
+			value: ' ',
+			color: 0,
+		}
+	}
+}
+
+pub struct XContentProcessor {}
+
+impl tuigui::ContentProcessor<Printable> for XContentProcessor {
+	fn process(&mut self, character: char, style: &tuigui::Style) -> Printable {
+		if let StyleGround::Color(color) = style.fg {
+			return Printable {
+				value: character,
+				color: match color {
+					tuigui::Color::Custom { r, g, b } => {
+						(r as u32) << 16 | (g as u32) << 8 | b as u32
+					}
+					tuigui::Color::Ansi(ansi_color) => match ansi_color {
+						AnsiColor::Black => 0x000000,
+						AnsiColor::Red => 0xFF0000,
+						AnsiColor::Green => 0x00FF00,
+						AnsiColor::Yellow => 0xFFFF00,
+						AnsiColor::Blue => 0x0000FF,
+						AnsiColor::Magenta => 0xFF00FF,
+						AnsiColor::Cyan => 0x00FFFF,
+						AnsiColor::White => 0xFFFFFF,
+						AnsiColor::BrightBlack => 0x808080,
+						AnsiColor::BrightRed => 0xFF8080,
+						AnsiColor::BrightGreen => 0x80FF80,
+						AnsiColor::BrightYellow => 0xFFFF80,
+						AnsiColor::BrightBlue => 0x8080FF,
+						AnsiColor::BrightMagenta => 0xFF80FF,
+						AnsiColor::BrightCyan => 0x80FFFF,
+						AnsiColor::BrightWhite => 0xC0C0C0,
+					},
+				},
+			};
+		}
+
+		Printable::clear_output()
+	}
+}
+
+const DEFAULT_WIDTH: u16 = 640;
+const DEFAULT_HEIGHT: u16 = 480;
 const FONT_WIDTH: u16 = 8;
 const FONT_HEIGHT: u16 = 16;
 const FONT_OFFSET_X: i16 = 2;
@@ -32,8 +85,8 @@ impl XBackend {
 			parent: screen.root(),
 			x: 0,
 			y: 0,
-			width: WIDTH,
-			height: HEIGHT,
+			width: DEFAULT_WIDTH,
+			height: DEFAULT_HEIGHT,
 			border_width: BORDER_WIDTH,
 			class: x::WindowClass::InputOutput,
 			visual: screen.root_visual(),
@@ -79,7 +132,7 @@ impl XBackend {
 	}
 }
 
-impl Backend for XBackend {
+impl Backend<Printable> for XBackend {
 	fn flush(&mut self) -> Result<(), io::Error> {
 		self.connection.flush().unwrap();
 		Ok(())
@@ -92,7 +145,10 @@ impl Backend for XBackend {
 
 		let reply = self.connection.wait_for_reply(cookie).unwrap();
 
-		Ok(Size::new(reply.width() / FONT_WIDTH, reply.height() / FONT_HEIGHT))
+		Ok(Size::new(
+			reply.width() / FONT_WIDTH,
+			reply.height() / FONT_HEIGHT,
+		))
 	}
 
 	fn set_cursor_pos(&mut self, position: Position) -> Result<(), io::Error> {
@@ -187,71 +243,56 @@ impl Backend for XBackend {
 		Ok(())
 	}
 
-	fn print<S: AsRef<str>>(&mut self, content: S) -> Result<(), io::Error> {
+	fn print(&mut self, content: Printable) -> Result<(), io::Error> {
 		let drawable = x::Drawable::Window(self.window);
 
-		let content = content.as_ref();
-		let (color, content) = decode_ansi(content);
+		let color = content.color;
+		let content = content.value;
 
-		for c in content.chars() {
-			if c == '\n' {
-				self.cursor_position.row += 1;
-				self.cursor_position.col = 0;
+		let x = self.cursor_position.col * FONT_WIDTH as i16;
+		let y = self.cursor_position.row * FONT_HEIGHT as i16;
 
-				continue;
-			}
+		let gc: x::Gcontext = self.connection.generate_id();
 
-			let x = self.cursor_position.col * FONT_WIDTH as i16;
-			let y = self.cursor_position.row * FONT_HEIGHT as i16;
+		self.connection.send_request(&x::CreateGc {
+			cid: gc,
+			drawable,
+			value_list: &[x::Gc::Foreground(color)],
+		});
 
-			let gc: x::Gcontext = self.connection.generate_id();
-
-			if c == '█' {
-				self.connection.send_request(&x::CreateGc {
-					cid: gc,
-					drawable,
-					value_list: &[x::Gc::Foreground(color)],
-				});
-
-				self.connection.send_request(&x::PolyFillRectangle {
-					drawable,
-					gc,
-					rectangles: &[x::Rectangle {
-						x,
-						y,
-						width: FONT_WIDTH,
-						height: FONT_HEIGHT,
-					}],
-				});
-			} else {
-				self.connection.send_request(&x::CreateGc {
-					cid: gc,
-					drawable,
-					value_list: &[x::Gc::Foreground(color)],
-				});
-
-				self.connection.send_request(&x::ClearArea {
-					window: self.window,
-					exposures: false,
+		if content == '█' {
+			self.connection.send_request(&x::PolyFillRectangle {
+				drawable,
+				gc,
+				rectangles: &[x::Rectangle {
 					x,
 					y,
 					width: FONT_WIDTH,
 					height: FONT_HEIGHT,
-				});
+				}],
+			});
+		} else {
+			self.connection.send_request(&x::ClearArea {
+				window: self.window,
+				exposures: false,
+				x,
+				y,
+				width: FONT_WIDTH,
+				height: FONT_HEIGHT,
+			});
 
-				self.connection.send_request(&x::ImageText8 {
-					drawable,
-					gc,
-					x: x + FONT_OFFSET_X,
-					y: y + (FONT_HEIGHT as i16) - FONT_OFFSET_Y,
-					string: &[c as u8, ' ' as u8],
-				});
-			}
-
-			self.connection.send_request(&x::FreeGc { gc });
-
-			self.cursor_position.col += 1;
+			self.connection.send_request(&x::ImageText8 {
+				drawable,
+				gc,
+				x: x + FONT_OFFSET_X,
+				y: y + (FONT_HEIGHT as i16) - FONT_OFFSET_Y,
+				string: &[content as u8, ' ' as u8],
+			});
 		}
+
+		self.connection.send_request(&x::FreeGc { gc });
+
+		self.cursor_position.col += 1;
 
 		Ok(())
 	}
@@ -259,82 +300,16 @@ impl Backend for XBackend {
 	fn cursor_position(&self) -> Result<Position, io::Error> {
 		Ok(self.cursor_position)
 	}
-}
 
-fn decode_ansi(content: &str) -> (u32, String) {
-	let mut final_color = 0x000000;
-
-	let content = content.to_string();
-	let mut content = content.chars();
-
-	let mut new_content = String::new();
-
-	while let Some(c) = content.next() {
-		if c == '\x1b' {
-			let c = content.next().unwrap();
-
-			if c == '[' {
-				let mut params = String::new();
-
-				loop {
-					let c = content.next().unwrap();
-
-					if c == 'm' {
-						break;
-					}
-
-					params.push(c);
-				}
-
-				let params: Vec<&str> = params.split(';').collect();
-
-				for param in params {
-					let param = param.parse::<u32>().unwrap();
-
-					if param == 0 {
-						final_color = 0x000000;
-					} else if param == 30 {
-						final_color = 0x000000;
-					} else if param == 31 {
-						final_color = 0x800000;
-					} else if param == 32 {
-						final_color = 0x008000;
-					} else if param == 33 {
-						final_color = 0x808000;
-					} else if param == 34 {
-						final_color = 0x000080;
-					} else if param == 35 {
-						final_color = 0x800080;
-					} else if param == 36 {
-						final_color = 0x008080;
-					} else if param == 37 {
-						final_color = 0xc0c0c0;
-					} else if param == 40 {
-						final_color = 0x000000;
-					} else if param == 41 {
-						final_color = 0x800000;
-					} else if param == 42 {
-						final_color = 0x008000;
-					} else if param == 43 {
-						final_color = 0x808000;
-					} else if param == 44 {
-						final_color = 0x000080;
-					} else if param == 45 {
-						final_color = 0x800080;
-					} else if param == 46 {
-						final_color = 0x008080;
-					} else if param == 47 {
-						final_color = 0xc0c0c0;
-					}
-				}
-			}
-		}
-
-		new_content.push(c);
+	fn capture_mouse(&mut self, _enable: bool) -> Result<(), io::Error> {
+		Ok(())
 	}
 
-	// new_content =  "\u{1b}█\u{1b}"
-	let new_content = new_content.replace("\u{1b}", "");
+	fn begin_sync_update(&mut self) -> Result<(), io::Error> {
+		Ok(())
+	}
 
-	(final_color, new_content)
+	fn end_sync_update(&mut self) -> Result<(), io::Error> {
+		Ok(())
+	}
 }
