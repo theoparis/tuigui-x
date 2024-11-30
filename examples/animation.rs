@@ -1,4 +1,16 @@
-use tuigui::*;
+use tuigui::{
+	animations,
+	widgets::{
+		self,
+		animation_container::{AnimationContainer, AnimationContainerSequence},
+		label::{Label, LabelStyle},
+		layers::Layers,
+		widget_dyn::WidgetDyn,
+		widget_pointer::WidgetPointer,
+	},
+	AnsiColor, Content, Context, ContextConfig, ContextSetupConfig, Position,
+	Size, Style, Transform,
+};
 use tuigui_x::{XBackend, XContentProcessor};
 
 // Amount of time before the demo quits.
@@ -11,8 +23,8 @@ const FRAME_DELAY: f64 = 0.0;
 // The amount of seconds the animations in this demo will take to finish.
 const ANIMATION_SECS: f64 = 1.0;
 
-fn pane(color: AnsiColor) -> widgets::FillArea {
-	widgets::FillArea::new(Some(Content::Styled(
+fn pane(color: AnsiColor) -> widgets::fill::FillArea {
+	widgets::fill::FillArea::new(Some(Content::Styled(
 		'█',
 		Style::new().fg(Some(color)),
 	)))
@@ -22,8 +34,8 @@ fn main() {
 	// Play with me to change what custom lerp animation gets used.
 	let lerp_anim = animations::linear;
 
-	let root_1 = widgets::AnimationContainer::new(
-		widgets::AnimationContainerSequence::Many(vec![
+	let root_1 = AnimationContainer::new(
+		AnimationContainerSequence::Many(vec![
 			lerp_anim(
 				Transform::new(Position::new(0, 0), Size::new(20, 10)),
 				ANIMATION_SECS,
@@ -49,8 +61,8 @@ fn main() {
 		pane(AnsiColor::Green),
 	);
 
-	let root_2 = widgets::AnimationContainer::new(
-		widgets::AnimationContainerSequence::Single(lerp_anim(
+	let root_2 = AnimationContainer::new(
+		AnimationContainerSequence::Single(lerp_anim(
 			Transform::new(Position::new(60, 10), Size::new(30, 10)),
 			ANIMATION_SECS,
 		)),
@@ -58,8 +70,8 @@ fn main() {
 		pane(AnsiColor::Red),
 	);
 
-	let root_3 = widgets::AnimationContainer::new(
-		widgets::AnimationContainerSequence::Many(vec![
+	let root_3 = AnimationContainer::new(
+		AnimationContainerSequence::Many(vec![
 			lerp_anim(
 				Transform::new(Position::new(20, 20), Size::new(10, 10)),
 				ANIMATION_SECS,
@@ -77,19 +89,19 @@ fn main() {
 		pane(AnsiColor::Cyan),
 	);
 
-	let label = widgets::WidgetPointer::new(widgets::Label::new(
+	let label = WidgetPointer::new(Label::new(
 		"The quick brown fox jumps over the lazy dog.",
-		widgets::LabelStyle::Single(Style::new().fg(Some(AnsiColor::Green))),
+		LabelStyle::Single(Style::new().fg(Some(AnsiColor::Green))),
 		false,
 	));
 
 	let label_ptr = label.pointer.clone();
 
-	let root = widgets::Layers::new(vec![
-		widgets::WidgetDyn::new(Box::new(root_1)),
-		widgets::WidgetDyn::new(Box::new(root_2)),
-		widgets::WidgetDyn::new(Box::new(root_3)),
-		widgets::WidgetDyn::new(Box::new(label)),
+	let root = Layers::new(vec![
+		WidgetDyn::new(Box::new(root_1)),
+		WidgetDyn::new(Box::new(root_2)),
+		WidgetDyn::new(Box::new(root_3)),
+		WidgetDyn::new(Box::new(label)),
 	]);
 
 	let mut context = Context::new(

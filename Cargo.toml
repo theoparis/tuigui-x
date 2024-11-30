@@ -4,5 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-tuigui = { version = "0.18.0" }
-xcb = "1.4.0"
+tuigui = { version = "0.22.0" }
+xcb = "1.5.0"
